@@ -22,35 +22,216 @@
     </div>
 
     <script>
+        /**
+         * OAuth2 Configuration
+         * 
+         * This section defines the core OAuth2 parameters required for the Authorization Code flow.
+         */
+
+        /**
+         * AUTH_SERVER: The Authorization Server (Issuer)
+         * 
+         * Other common names are: "Issuer" or "Identity Provider (IdP)"
+         * 
+         * This is the trusted server that:
+         * - Authenticates users (verifies identity)
+         * - Validates user permissions and role assignments
+         * - Issues access tokens that authorize API calls
+         * - Maintains the signing certificate for token validation
+         * 
+         * Examples: Azure AD, Okta, Auth0, Keycloak, or your custom auth service
+         * 
+         * In a multi-tenant system, this server manages multiple tenants (customers)
+         * each with their own users, roles, and permissions.
+         */
         const AUTH_SERVER = 'http://localhost:5000';
+
+        /**
+         * RESOURCE_SERVER: The Protected Resource API
+         * 
+         * Other common names are: "Resource Server" or "API" or "Audience"
+         * 
+         * This is the server hosting the protected resources/APIs that:
+         * - Host business data (protected resources)
+         * - Require valid access tokens for access
+         * - Validate tokens issued by the Authorization Server
+         * - Enforce role-based or scope-based access control
+         * 
+         * The access token contains an "aud" (audience) claim identifying which
+         * resource servers the token can be used with. In this case, it's the resource server.
+         * 
+         * Examples: Your API endpoints, Microsoft Graph API, Google Calendar API
+         */
         const RESOURCE_SERVER = 'http://localhost:5001';
+
+        /**
+         * CLIENT_ID: Application Identifier
+         * 
+         * Other common names are: "Client Identifier" or "Application ID"
+         * 
+         * A unique identifier for this application/client registered with the Authorization Server.
+         * 
+         * During app registration, the Auth Server stores:
+         * - Client ID (public identifier)
+         * - Allowed redirect URIs (security allowlist)
+         * - Allowed scopes (permissions this app can request)
+         * - Resource owner grants (what users have allowed this app to access)
+         * 
+         * This prevents malicious apps from impersonating legitimate applications.
+         */
         const CLIENT_ID = 'app1';
+
+        /**
+         * REDIRECT_URI: Post-Login Callback URL
+         * 
+         * Other common names are: "Callback URL" or "Reply URL" or "Authorization Redirect URI"
+         * 
+         * After the user logs in and grants consent, the Authorization Server
+         * redirects the browser back to this URI with an authorization code.
+         * 
+         * Security: This must be registered with the Auth Server to prevent
+         * "open redirect" attacks where malicious apps intercept the auth code.
+         * 
+         * In this SPA, we use a fragment (#/callback) to avoid page reloads.
+         * In backend apps, this might be: https://myapp.com/callback
+         */
         const REDIRECT_URI = 'http://localhost:5002/#/callback';
+
+        /**
+         * SCOPES: Permissions/Delegated Access Rights
+         * 
+         * Other common names are: "Scopes" or "Permissions" or "Delegated Permissions"
+         * 
+         * Scopes define what actions the access token grants permission for.
+         * They represent delegated access to specific resources or operations.
+         * Delegate here means that the user who logged in has granted this app
+         * permission to act on their behalf for these scopes. For example, if the user
+         * has "read" and "write" permissions, the app can read and modify data.
+         * If the user logs into a mail client and grants "mail:read" scope, this delegates
+         * permissions which the user has for reading their mail to the mail client app.
+         * 
+         * In a real system:
+         * - "read" might mean: GET /api/data (read-only access)
+         * - "write" might mean: POST/PUT /api/data (modify access)
+         * - "admin" might mean: DELETE operations or user management
+         * - "calendar:read" might mean: read calendar events
+         * - "calendar:write" might mean: create/modify calendar events
+         * 
+         * Related Concepts:
+         * - PERMISSIONS: What a user CAN do in the system
+         * - ROLES: Groups of permissions assigned to users (e.g., "Editor", "Viewer", "Admin")
+         * 
+         * Flow:
+         * 1. App requests scopes: "read write"
+         * 2. User logs in and sees a consent dialog: "This app wants access to..."
+         *    (in this demo the consent flow is not implemented)
+         * 3. User grants consent (or denies)
+         * 4. Auth Server issues token with the granted scopes
+         * 5. Resource Server checks token scopes before allowing operations
+         * 
+         * Typically, the server will store the user's consent decision for future logins.
+         * A user may choose to revoke consent later via account settings. For example,
+         * if you granted read access to your bank account to a budgeting app,
+         * you might later revoke that access if you no longer use the app.
+         * 
+         * The resource server may still enforce additional checks based on user roles
+         * or permissions even if the scope is granted.
+         */
         const SCOPES = 'read write';
+
+        /**
+         * TENANT_ID: Multi-Tenancy Identifier
+         * 
+         * Other common names are: "Tenant", "Organization", "Customer ID", "Workspace ID"
+         * 
+         * In a multi-tenant system, the TENANT_ID identifies which customer/organization
+         * owns the resources being accessed. This provides data isolation and security.
+         * In simpler terms, the tenant is a customer of the authentication server, 
+         * typically this is whoever is running the resource server. This means, I can use
+         * the same mail client and authorization server to log into my work and home 
+         * email accounts, because from the point of view of the authentication server
+         * they are different tenants.
+         * 
+         * Tenant Information:
+         * - In our implementation, each tenant has separate signing certificates
+         *   (for token validation). In real systems, by default tokens are signed with
+         *   a certificate managed by the auth server while still having the option to
+         *   use tenant-specific certificates.
+         * - Each tenant has separate users, apps, and role assignments
+         * - Tokens include a "tid" (tenant ID) claim
+         * - Resource servers validate that tokens match the requested tenant
+         * 
+         * This prevents users from one tenant accessing data from another tenant.
+         * 
+         * Example: Two customers using the same platform
+         * - Tenant A (Acme Corp): users, roles, data isolated from Tenant B
+         * - Tenant B (TechCorp): separate users, roles, data
+         * - Token with tid=tenant1 cannot be used to access tenant2's data
+         */
         const TENANT_ID = 'tenant1';
+
         let accessToken = null;
 
-        // Generate PKCE code challenge
+        /**
+         * STEP 1: Generate PKCE Challenge
+         * 
+         * PKCE (Proof Key for Code Exchange) is a security extension for OAuth2
+         * that protects against authorization code interception attacks.
+         * 
+         * Process:
+         * 1. Generate a random code_verifier (43-128 characters)
+         * 2. Hash it with SHA-256 to create code_challenge
+         * 3. Send code_challenge to auth server
+         * 4. Later, send code_verifier to token endpoint for verification
+         * 
+         * This prevents attackers from using intercepted auth codes without the verifier.
+         */
         async function generatePKCE() {
+            console.log('[PKCE] STEP 1: Generating PKCE challenge...');
+            
+            // Generate 32 random bytes
             const array = new Uint8Array(32);
             crypto.getRandomValues(array);
             const codeVerifier = btoa(String.fromCharCode.apply(null, array))
                 .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
             
+            console.log('  [OK] Generated code_verifier (base64url encoded)', codeVerifier.substring(0, 20) + '...');
+            
+            // Hash with SHA-256
             const encoder = new TextEncoder();
             const data = encoder.encode(codeVerifier);
             const hash = await crypto.subtle.digest('SHA-256', data);
             const codeChallenge = btoa(String.fromCharCode.apply(null, new Uint8Array(hash)))
                 .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
             
+            console.log('  [OK] Generated code_challenge (SHA-256 hash)', codeChallenge.substring(0, 20) + '...');
+            
             return { codeVerifier, codeChallenge };
         }
 
-        // Start OAuth2 Authorization Code Flow with PKCE
+        /**
+         * STEP 2: Start OAuth2 Authorization Code Flow
+         * 
+         * This initiates the Authorization Code Grant flow:
+         * 1. Generate PKCE challenge
+         * 2. Store code_verifier in session storage (needed later)
+         * 3. Redirect to authorization endpoint with parameters
+         * 4. User logs in and grants consent
+         * 5. Auth server redirects back with authorization code
+         */
         async function startOAuth2Flow() {
-            const { codeVerifier, codeChallenge } = await generatePKCE();
-            sessionStorage.setItem('codeVerifier', codeVerifier);
+            console.log('[AUTH] Starting OAuth2 Authorization Code Flow with PKCE');
+            console.log(`  Client ID: ${CLIENT_ID}`);
+            console.log(`  Scopes: ${SCOPES}`);
+            console.log(`  Tenant: ${TENANT_ID}`);
             
+            const { codeVerifier, codeChallenge } = await generatePKCE();
+            
+            // Store verifier for later use in token exchange
+            sessionStorage.setItem('codeVerifier', codeVerifier);
+            console.log('  [OK] Stored code_verifier in sessionStorage');
+            
+            // Build authorization URL with parameters
             const params = new URLSearchParams({
                 client_id: CLIENT_ID,
                 redirect_uri: REDIRECT_URI,
@@ -59,36 +240,69 @@
                 code_challenge_method: 'S256'
             });
             
-            window.location.href = `${AUTH_SERVER}/${TENANT_ID}/oauth2/v2.0/authorize?${params}`;
+            const authUrl = `${AUTH_SERVER}/${TENANT_ID}/oauth2/v2.0/authorize?${params}`;
+            console.log('  [REDIRECT] Redirecting to authorization server:', authUrl.substring(0, 60) + '...');
+            
+            window.location.href = authUrl;
         }
 
-        // Handle callback from authorization server
+        /**
+         * STEP 3: Handle Authorization Server Callback
+         * 
+         * After user logs in and grants consent, the auth server redirects
+         * back with an authorization code in the URL fragment (#code=...).
+         * 
+         * Process:
+         * 1. Extract authorization code from URL
+         * 2. Retrieve stored code_verifier from session storage
+         * 3. Exchange code + verifier for access token at token endpoint
+         * 4. Store access token for API calls
+         */
         async function handleCallback() {
-            const hash = window.location.hash.substring(1); // Remove the #
+            console.log('[CALLBACK] Handling authorization callback...');
+            
+            // Extract authorization code from URL fragment (#code=...)
+            const hash = window.location.hash.substring(1);
             const queryIndex = hash.indexOf('?');
             const queryString = queryIndex !== -1 ? hash.substring(queryIndex + 1) : hash;
             const params = new URLSearchParams(queryString);
             const code = params.get('code');
             
             if (!code) {
-                displayResult('No authorization code received', 'error');
+                const msg = 'No authorization code received';
+                console.error('[ERROR]', msg);
+                displayResult(msg, 'error');
                 return;
             }
-
+            
+            console.log('  [OK] Extracted authorization code:', code.substring(0, 20) + '...');
+            
             const codeVerifier = sessionStorage.getItem('codeVerifier');
             if (!codeVerifier) {
-                displayResult('Code verifier not found in session', 'error');
+                const msg = 'Code verifier not found in session';
+                console.error('[ERROR]', msg);
+                displayResult(msg, 'error');
                 return;
             }
-
+            
+            console.log('  [OK] Retrieved code_verifier from sessionStorage');
+            
             try {
-                // Exchange authorization code for access token
+                console.log('[TOKEN] STEP 2: Exchanging authorization code for access token...');
+                
+                // Prepare token exchange request
                 const formData = new FormData();
                 formData.append('grant_type', 'authorization_code');
                 formData.append('code', code);
                 formData.append('redirect_uri', REDIRECT_URI);
                 formData.append('client_id', CLIENT_ID);
                 formData.append('code_verifier', codeVerifier);
+                
+                console.log('  Sending token request with:');
+                console.log('    - grant_type: authorization_code');
+                console.log('    - client_id:', CLIENT_ID);
+                console.log('    - code:', code.substring(0, 20) + '...');
+                console.log('    - code_verifier:', codeVerifier.substring(0, 20) + '...');
 
                 const response = await fetch(`${AUTH_SERVER}/${TENANT_ID}/oauth2/v2.0/token`, {
                     method: 'POST',
@@ -96,17 +310,30 @@
                 });
 
                 const data = await response.json();
+                
                 if (response.ok) {
                     accessToken = data.access_token;
                     sessionStorage.setItem('accessToken', accessToken);
-                    displayResult(`Obtained an access token.`, 'success');
+                    
+                    console.log('  [OK] Successfully obtained access token');
+                    console.log('    Token type:', data.token_type);
+                    console.log('    Expires in:', data.expires_in, 'seconds');
+                    console.log('    Scopes:', data.scope);
+                    console.log('    Token preview:', accessToken.substring(0, 30) + '...');
+                    
+                    displayResult('[SUCCESS] Authentication successful! Access token obtained.', 'success');
                     document.getElementById('protectedBtn').style.display = 'inline-block';
-                    // Clear the code verifier after use
+                    
+                    // Clear the code verifier after use (no longer needed)
                     sessionStorage.removeItem('codeVerifier');
+                    console.log('  [OK] Cleared code_verifier from sessionStorage');
                 } else {
-                    displayResult(`Error: ${data.error}`, 'error');
+                    const msg = `Token endpoint error: ${data.error}`;
+                    console.error('[ERROR]', msg);
+                    displayResult(msg, 'error');
                 }
             } catch (error) {
+                console.error('[ERROR] Error during token exchange:', error);
                 displayResult(`Error: ${error.message}`, 'error');
             }
         }
@@ -117,17 +344,34 @@
             resultDiv.textContent = message;
         }
 
-        // Call the protected resource endpoint
+        /**
+         * STEP 4: Call Protected Resource
+         * 
+         * Now that we have an access token, we can call protected endpoints.
+         * 
+         * Process:
+         * 1. Retrieve access token from session storage
+         * 2. Add it to Authorization header as Bearer token
+         * 3. Send request to protected resource endpoint
+         * 4. Resource server validates token and returns protected data
+         */
         async function callProtectedResource() {
+            console.log('[PROTECTED] STEP 3: Calling protected resource endpoint...');
+            
             if (!accessToken) {
                 accessToken = sessionStorage.getItem('accessToken');
                 if (!accessToken) {
-                    displayResult('No access token available. Please login first.', 'error');
+                    const msg = 'No access token available. Please login first.';
+                    console.error('[ERROR]', msg);
+                    displayResult(msg, 'error');
                     return;
                 }
             }
 
             try {
+                console.log('  Sending request to:', `${RESOURCE_SERVER}/protected`);
+                console.log('  Authorization header: Bearer', accessToken.substring(0, 30) + '...');
+                
                 const response = await fetch(`${RESOURCE_SERVER}/protected`, {
                     method: 'GET',
                     headers: {
@@ -138,17 +382,30 @@
 
                 const data = await response.json();
                 if (response.ok) {
-                    displayResult(`Success: ${JSON.stringify(data, null, 2)}`, 'success');
+                    console.log('  [OK] Protected resource accessed successfully');
+                    console.log('  Response:', data);
+                    displayResult(`[SUCCESS] Success!\n\n${JSON.stringify(data, null, 2)}`, 'success');
                 } else {
-                    displayResult(`Error: ${response.status} ${data.error || 'Unauthorized'}`, 'error');
+                    const msg = `${response.status}: ${data.error || 'Access Denied'}`;
+                    console.error('[ERROR]', msg);
+                    displayResult(`Error: ${msg}`, 'error');
                 }
             } catch (error) {
+                console.error('[ERROR] Error calling protected resource:', error);
                 displayResult(`Error: ${error.message}`, 'error');
             }
         }
 
-        // Check if this is a callback
+        // Initialize: Check if this is a callback from the authorization server
+        console.log('[INIT] OAuth2 Demo Client Initialized');
+        console.log('Environment:');
+        console.log('  Auth Server:', AUTH_SERVER);
+        console.log('  Resource Server:', RESOURCE_SERVER);
+        console.log('  Client ID:', CLIENT_ID);
+        console.log('  Tenant:', TENANT_ID);
+        
         if (window.location.hash.includes('code=')) {
+            console.log('\n[SUCCESS] Authorization callback detected, processing...\n');
             handleCallback();
         }
     </script>
