@@ -51,11 +51,14 @@ namespace AuthServer
         }
 
         /// <summary>
-        /// Gets the public key in PEM format.
+        /// Gets the public key in SubjectPublicKeyInfo (SPKI) format, Base64-encoded.
+        /// This format is compatible with standard RSA verification libraries.
         /// </summary>
         public string GetPublicKey()
         {
-            var publicKeyBytes = _certificate.PublicKey.EncodedKeyValue.RawData;
+            var rsa = _certificate.GetRSAPublicKey()
+                ?? throw new InvalidOperationException("Public key is not available");
+            var publicKeyBytes = rsa.ExportSubjectPublicKeyInfo();
             return Convert.ToBase64String(publicKeyBytes);
         }
 

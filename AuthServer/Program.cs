@@ -56,11 +56,10 @@ var _authorizationCodeHandler = new AuthorizationCodeHandler();
 // critical secret and store it securely (e.g., in Key Vault). If it is leaked,
 // attackers could forge valid tokens and access any resource that trusts
 // tokens from this auth server.
-string signingCertCommonName = "http://localhost:5000";
-var _certificateHandler = new SigningCertificateHandler(signingCertCommonName);
+// In this implementation we have a seprate certificate per tenant.
 var _jwtHandler = new JwtHandler(
-    issuer: signingCertCommonName,
-    secretKey: _certificateHandler.GetPrivateKey());
+    issuer: "http://localhost:5000",
+    privateKeyBase64: tenant.SigningCertificateHandler.GetPrivateKey());
 int expirationSeconds = 3600;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -242,5 +241,29 @@ app.MapPost("/{tenantId}/oauth2/v2.0/token", (
 
     return Results.Json(response);
 }).DisableAntiforgery();
+
+// Public Key Endpoint
+// Returns the public key used to verify tokens
+// This is typically used by resource servers to validate access tokens
+app.MapGet("/{tenantId}/oauth2/v2.0/public-key", (string tenantId) =>
+{
+    // Confirm tenant exists
+    Tenant? tenant;
+    if (tenantId == null || !_tenants.TryGetValue(tenantId, out tenant))
+    {
+        return Results.NotFound("Tenant not found");
+    }
+
+    var publicKey = tenant.SigningCertificateHandler.GetPublicKey();
+    
+    var response = new
+    {
+        public_key = publicKey,
+        key_type = "RSA",
+        algorithm = "RS256"
+    };
+
+    return Results.Json(response);
+});
 
 app.Run("http://localhost:5000");

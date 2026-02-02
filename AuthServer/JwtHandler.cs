@@ -6,31 +6,22 @@ namespace AuthServer
 {
     public class JwtHandler
     {
-        // Hardcoded secret key used to sign JWT tokens
-        // In production, this should be stored securely (e.g., in Key Vault)
-        // Leaking this secret would allow attackers to forge valid tokens
-        // and access any resource that trusts tokens from this auth server.
-        private readonly string _secretKey;
+        // RSA private key for signing JWT tokens with RS256 algorithm
+        // The private key is used to create cryptographic signatures
+        // Resource servers will validate these signatures using the corresponding public key
+        private readonly byte[] _privateKeyBytes;
 
-        // Issuer identifier for the JWT tokens. This is akin to signing a document
-        // with your name to indicate its origin. In this case, we include our name
-        // in the 'iss' claim of the JWT payload. To do a digital signature, we
-        // temporarily add the secret to the JWT string and then compute an HMAC-SHA256
-        // hash of the entire string (header.payload.secret). The resulting hash is
-        // included as the signature part of the JWT. Resource servers that receive
-        // the JWT can verify the signature by performing the same HMAC-SHA256
-        // computation using the shared secret and comparing the result to the
-        // signature in the JWT.
+        // Issuer identifier for the JWT tokens
         private readonly string _issuer;
 
-        public JwtHandler(string issuer, string secretKey)
+        public JwtHandler(string issuer, string privateKeyBase64)
         {
-            _secretKey = secretKey;
+            _privateKeyBytes = Convert.FromBase64String(privateKeyBase64);
             _issuer = issuer;
         }
 
         /// <summary>
-        /// Generates a JWT access token based on the provided token request information.
+        /// Generates a JWT access token using RS256 (RSA with SHA256).
         /// JWT format: header.payload.signature (all base64url encoded)
         /// </summary>
         /// <param name="tenantId">The tenant ID.</param>
@@ -46,7 +37,7 @@ namespace AuthServer
             int expirationSeconds)
         {
             // Header
-            var header = new { alg = "HS256", typ = "JWT" };
+            var header = new { alg = "RS256", typ = "JWT" };
             var headerJson = JsonSerializer.Serialize(header);
             var headerEncoded = Base64UrlEncode(headerJson);
 
@@ -75,14 +66,14 @@ namespace AuthServer
         }
 
         /// <summary>
-        /// Computes the HMAC-SHA256 signature of the message.
+        /// Computes the RSA-SHA256 signature of the message.
         /// </summary>
         private byte[] ComputeSignature(string message)
         {
-            var key = Encoding.UTF8.GetBytes(_secretKey);
-            using (var hmac = new HMACSHA256(key))
+            using (var rsa = RSA.Create())
             {
-                return hmac.ComputeHash(Encoding.UTF8.GetBytes(message));
+                rsa.ImportPkcs8PrivateKey(_privateKeyBytes, out _);
+                return rsa.SignData(Encoding.UTF8.GetBytes(message), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
             }
         }
 

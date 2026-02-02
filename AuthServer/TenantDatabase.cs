@@ -11,6 +11,8 @@ namespace AuthServer
 
         public string GetId() => _tenantId;
 
+        public SigningCertificateHandler SigningCertificateHandler { get; }
+
         public TenantDatabase<AppInfo> AppRegistrations { get; }
 
         public TenantDatabase<UserInfo> UserRegistrations { get; }
@@ -20,9 +22,10 @@ namespace AuthServer
         public Tenant(string tenantId)
         {
             _tenantId = tenantId;
-            AppRegistrations = new TenantDatabase<AppInfo>(_tenantId);
-            UserRegistrations = new TenantDatabase<UserInfo>(_tenantId);
-            UserGrants = new TenantDatabase<UserGrants>(_tenantId);
+            SigningCertificateHandler = new SigningCertificateHandler(tenantId);
+            AppRegistrations = new TenantDatabase<AppInfo>(tenantId);
+            UserRegistrations = new TenantDatabase<UserInfo>(tenantId);
+            UserGrants = new TenantDatabase<UserGrants>(tenantId);
         }
     }
 

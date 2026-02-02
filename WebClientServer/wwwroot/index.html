@@ -17,15 +17,18 @@
     <div class="container">
         <h1>OAuth2 Demo</h1>
         <button onclick="startOAuth2Flow()">Login with OAuth2</button>
+        <button onclick="callProtectedResource()" id="protectedBtn" style="display:none;">Call Protected Resource</button>
         <div id="result"></div>
     </div>
 
     <script>
         const AUTH_SERVER = 'http://localhost:5000';
+        const RESOURCE_SERVER = 'http://localhost:5001';
         const CLIENT_ID = 'app1';
         const REDIRECT_URI = 'http://localhost:5002/#/callback';
         const SCOPES = 'read write';
         const TENANT_ID = 'tenant1';
+        let accessToken = null;
 
         // Generate PKCE code challenge
         async function generatePKCE() {
@@ -94,7 +97,10 @@
 
                 const data = await response.json();
                 if (response.ok) {
+                    accessToken = data.access_token;
+                    sessionStorage.setItem('accessToken', accessToken);
                     displayResult(`Obtained an access token.`, 'success');
+                    document.getElementById('protectedBtn').style.display = 'inline-block';
                     // Clear the code verifier after use
                     sessionStorage.removeItem('codeVerifier');
                 } else {
@@ -109,6 +115,36 @@
             const resultDiv = document.getElementById('result');
             resultDiv.className = `result ${type}`;
             resultDiv.textContent = message;
+        }
+
+        // Call the protected resource endpoint
+        async function callProtectedResource() {
+            if (!accessToken) {
+                accessToken = sessionStorage.getItem('accessToken');
+                if (!accessToken) {
+                    displayResult('No access token available. Please login first.', 'error');
+                    return;
+                }
+            }
+
+            try {
+                const response = await fetch(`${RESOURCE_SERVER}/protected`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    displayResult(`Success: ${JSON.stringify(data, null, 2)}`, 'success');
+                } else {
+                    displayResult(`Error: ${response.status} ${data.error || 'Unauthorized'}`, 'error');
+                }
+            } catch (error) {
+                displayResult(`Error: ${error.message}`, 'error');
+            }
         }
 
         // Check if this is a callback
