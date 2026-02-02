@@ -23,6 +23,16 @@
 
     <script>
         /**
+         * Dynamic hostname detection for Docker vs local development
+         * In Docker, other services are accessed via container names (auth-server, resource-server)
+         * Locally, they're accessed via localhost
+         */
+        const isInDocker = window.location.hostname !== 'localhost';
+        const authHost = isInDocker ? 'http://auth-server:5001' : 'http://localhost:5001';
+        const resourceHost = isInDocker ? 'http://resource-server:5002' : 'http://localhost:5002';
+        const clientHost = window.location.origin;
+
+        /**
          * OAuth2 Configuration
          * 
          * This section defines the core OAuth2 parameters required for the Authorization Code flow.
@@ -44,7 +54,7 @@
          * In a multi-tenant system, this server manages multiple tenants (customers)
          * each with their own users, roles, and permissions.
          */
-        const AUTH_SERVER = 'http://localhost:5001';
+        const AUTH_SERVER = authHost;
 
         /**
          * RESOURCE_SERVER: The Protected Resource API
@@ -62,7 +72,7 @@
          * 
          * Examples: Your API endpoints, Microsoft Graph API, Google Calendar API
          */
-        const RESOURCE_SERVER = 'http://localhost:5002';
+        const RESOURCE_SERVER = resourceHost;
 
         /**
          * CLIENT_ID: Application Identifier
@@ -95,7 +105,7 @@
          * In this SPA, we use a fragment (#/callback) to avoid page reloads.
          * In backend apps, this might be: https://myapp.com/callback
          */
-        const REDIRECT_URI = 'http://localhost:5003/#/callback';
+        const REDIRECT_URI = clientHost + '/#/callback';
 
         /**
          * SCOPES: Permissions/Delegated Access Rights

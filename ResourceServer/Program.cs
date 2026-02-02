@@ -2,13 +2,15 @@
 
 var builder = WebApplication.CreateBuilder(args);
 
+var webClientOrigins = (Environment.GetEnvironmentVariable("WEB_CLIENT_ORIGINS") ?? "http://localhost:5003,http://web-client:5003").Split(",");
+
 // Add CORS configuration
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowWebClient", policy =>
     {
         // Allow both localhost and container hostname for flexibility
-        policy.WithOrigins("http://localhost:5003", "http://web-client:5003")
+        policy.WithOrigins(webClientOrigins)
               .AllowAnyMethod()
               .AllowAnyHeader();
     });

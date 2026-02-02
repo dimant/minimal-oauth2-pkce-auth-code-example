@@ -8,6 +8,8 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - AUTH_SERVER_URL=http://auth-server:5001
+      - WEB_CLIENT_ORIGINS=http://localhost:5003
+      - REDIRECT_URI=http://localhost:5003/#/callback
     networks:
       - oauth-network
     container_name: oauth-auth-server
@@ -21,6 +23,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - AUTH_SERVER_URL=http://auth-server:5001
+      - WEB_CLIENT_ORIGINS=http://localhost:5003
     depends_on:
       - auth-server
     networks:

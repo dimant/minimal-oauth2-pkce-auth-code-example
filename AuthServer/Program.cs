@@ -8,10 +8,13 @@ var _tenants = new Dictionary<string, Tenant>();
 var tenant = new Tenant("tenant1");
 _tenants.Add(tenant.GetId(), tenant);
 
+// Determine redirect URI based on environment (Docker vs local)
+var redirectUri = Environment.GetEnvironmentVariable("REDIRECT_URI") ?? "http://localhost:5003/#/callback";
+
 tenant.AppRegistrations.Register(new AppInfo
 {
     ClientId = "app1",
-    RedirectUri = "http://localhost:5003/#/callback",
+    RedirectUri = redirectUri,
     Scopes = new[] { "read", "write" }
 });
 
@@ -65,12 +68,14 @@ int expirationSeconds = 3600;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var webClientOrigins = (Environment.GetEnvironmentVariable("WEB_CLIENT_ORIGINS") ?? "http://localhost:5003,http://web-client:5003").Split(",");
+
 // Add CORS policy to allow requests from the web client
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowWebClient", policy =>
     {
-        policy.WithOrigins("http://localhost:5003", "http://web-client:5003")
+        policy.WithOrigins(webClientOrigins)
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
