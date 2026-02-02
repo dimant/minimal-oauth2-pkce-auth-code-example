@@ -11,7 +11,7 @@ _tenants.Add(tenant.GetId(), tenant);
 tenant.AppRegistrations.Register(new AppInfo
 {
     ClientId = "app1",
-    RedirectUri = "http://localhost:5002/#/callback",
+    RedirectUri = "http://localhost:5003/#/callback",
     Scopes = new[] { "read", "write" }
 });
 
@@ -57,8 +57,9 @@ var _authorizationCodeHandler = new AuthorizationCodeHandler();
 // attackers could forge valid tokens and access any resource that trusts
 // tokens from this auth server.
 // In this implementation we have a seprate certificate per tenant.
+var authServerUrl = Environment.GetEnvironmentVariable("AUTH_SERVER_URL") ?? "http://localhost:5001";
 var _jwtHandler = new JwtHandler(
-    issuer: "http://localhost:5000",
+    issuer: authServerUrl,
     privateKeyBase64: tenant.SigningCertificateHandler.GetPrivateKey());
 int expirationSeconds = 3600;
 
@@ -69,7 +70,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowWebClient", policy =>
     {
-        policy.WithOrigins("http://localhost:5002")
+        policy.WithOrigins("http://localhost:5003", "http://web-client:5003")
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
@@ -288,4 +289,4 @@ app.MapGet("/{tenantId}/oauth2/v2.0/public-key", (string tenantId) =>
     return Results.Json(response);
 });
 
-app.Run("http://localhost:5000");
+app.Run("http://+:5001");

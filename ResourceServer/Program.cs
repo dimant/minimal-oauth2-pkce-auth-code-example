@@ -7,7 +7,8 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowWebClient", policy =>
     {
-        policy.WithOrigins("http://localhost:5002")
+        // Allow both localhost and container hostname for flexibility
+        policy.WithOrigins("http://localhost:5003", "http://web-client:5003")
               .AllowAnyMethod()
               .AllowAnyHeader();
     });
@@ -20,7 +21,8 @@ app.UseCors("AllowWebClient");
 
 // Initialize services
 var jwtValidator = new JwtValidator();
-var publicKeyProvider = new PublicKeyProvider("http://localhost:5000");
+var authServerUrl = Environment.GetEnvironmentVariable("AUTH_SERVER_URL") ?? "http://localhost:5001";
+var publicKeyProvider = new PublicKeyProvider(authServerUrl);
 
 // Middleware to validate bearer tokens
 app.Use(async (context, next) =>
@@ -121,4 +123,4 @@ app.MapGet("/protected", (HttpContext context) =>
     });
 });
 
-app.Run("http://localhost:5001");
+app.Run("http://+:5002");

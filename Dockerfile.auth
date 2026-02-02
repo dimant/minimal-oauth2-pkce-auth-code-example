@@ -1,0 +1,18 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+COPY AuthServer/AuthServer.csproj AuthServer/
+RUN dotnet restore AuthServer/AuthServer.csproj
+
+COPY AuthServer/ AuthServer/
+RUN dotnet build AuthServer/AuthServer.csproj -c Release -o /app/build
+
+RUN dotnet publish AuthServer/AuthServer.csproj -c Release -o /app/publish
+
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:9.0
+WORKDIR /app
+COPY --from=build /app/publish .
+
+ENTRYPOINT ["dotnet", "AuthServer.dll"]

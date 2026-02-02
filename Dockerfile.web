@@ -1,0 +1,18 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+COPY WebClientServer/WebClientServer.csproj WebClientServer/
+RUN dotnet restore WebClientServer/WebClientServer.csproj
+
+COPY WebClientServer/ WebClientServer/
+RUN dotnet build WebClientServer/WebClientServer.csproj -c Release -o /app/build
+
+RUN dotnet publish WebClientServer/WebClientServer.csproj -c Release -o /app/publish
+
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:9.0
+WORKDIR /app
+COPY --from=build /app/publish .
+
+ENTRYPOINT ["dotnet", "WebClientServer.dll"]

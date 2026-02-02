@@ -10,4 +10,4 @@ app.MapGet("/callback", (string code) =>
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.Run("http://localhost:5002");
+app.Run("http://+:5003");

@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+.git
+.gitignore
+.vs/
+.vscode/
+*.user
+*.sln.iml
+.DS_Store
+README.md
+.env
+.env.local

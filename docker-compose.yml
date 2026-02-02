@@ -1,0 +1,47 @@
+services:
+  auth-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.auth
+    ports:
+      - "5001:5001"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - AUTH_SERVER_URL=http://auth-server:5001
+    networks:
+      - oauth-network
+    container_name: oauth-auth-server
+
+  resource-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.resource
+    ports:
+      - "5002:5002"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - AUTH_SERVER_URL=http://auth-server:5001
+    depends_on:
+      - auth-server
+    networks:
+      - oauth-network
+    container_name: oauth-resource-server
+
+  web-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "5003:5003"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    depends_on:
+      - auth-server
+      - resource-server
+    networks:
+      - oauth-network
+    container_name: oauth-web-client
+
+networks:
+  oauth-network:
+    driver: bridge
