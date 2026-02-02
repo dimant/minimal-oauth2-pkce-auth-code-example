@@ -11,7 +11,7 @@ _tenants.Add(tenant.GetId(), tenant);
 tenant.AppRegistrations.Register(new AppInfo
 {
     ClientId = "app1",
-    RedirectUri = "http://localhost:5002/callback",
+    RedirectUri = "http://localhost:5002/#/callback",
     Scopes = new[] { "read", "write" }
 });
 
@@ -48,8 +48,38 @@ tenant.UserGrants.Register(new UserGrants
 
 var _authorizationCodeHandler = new AuthorizationCodeHandler();
 
+// This is the core of an auth server - signing certificates and JWT handler
+// In this example we generate a self-signed certificate for signing tokens.
+// In a production system, you would obtain a certificate from a trusted
+// Certificate Authority (CA) or use a managed certificate service.
+// In a production system, you would also treat the certificate as a mission
+// critical secret and store it securely (e.g., in Key Vault). If it is leaked,
+// attackers could forge valid tokens and access any resource that trusts
+// tokens from this auth server.
+string signingCertCommonName = "http://localhost:5000";
+var _certificateHandler = new SigningCertificateHandler(signingCertCommonName);
+var _jwtHandler = new JwtHandler(
+    issuer: signingCertCommonName,
+    secretKey: _certificateHandler.GetPrivateKey());
+int expirationSeconds = 3600;
+
 var builder = WebApplication.CreateBuilder(args);
+
+// Add CORS policy to allow requests from the web client
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowWebClient", policy =>
+    {
+        policy.WithOrigins("http://localhost:5002")
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
 var app = builder.Build();
+
+// Use CORS middleware
+app.UseCors("AllowWebClient");
 
 // OAuth2 Authorization Endpoint
 // tenantId is part of the path
@@ -160,5 +190,57 @@ app.MapPost("/{tenantId}/oauth2/v2.0/authorize/login", (
     }
     return Results.Content("<h1>Invalid credentials</h1>", "text/html");
 }).DisableAntiforgery(); // Disable antiforgery for simplicity in this example. In production we want to be certain that the login form was served by us and not a phishing site.
+
+// OAuth2 Token Endpoint
+// The client exchanges the authorization code for an access token
+app.MapPost("/{tenantId}/oauth2/v2.0/token", (
+    string tenantId,
+    [FromForm] string grant_type,
+    [FromForm] string code,
+    [FromForm] string redirect_uri,
+    [FromForm] string client_id,
+    [FromForm] string code_verifier) =>
+{
+    if (grant_type != "authorization_code")
+    {
+        return Results.BadRequest(new { error = "unsupported_grant_type" });
+    }
+
+    var authCodeRecord = _authorizationCodeHandler.ValidateCode(code, code_verifier);
+    if (authCodeRecord == null)
+    {
+        return Results.BadRequest(new { error = "invalid_code" });
+    }
+
+    if (authCodeRecord.ClientId != client_id)
+    {
+        return Results.BadRequest(new { error = "invalid_client" });
+    }
+
+    var tenant = _tenants[tenantId];
+    var appInfo = tenant.AppRegistrations.Get(client_id);
+    if (appInfo == null || appInfo.RedirectUri != redirect_uri)
+    {
+        return Results.BadRequest(new { error = "invalid_request" });
+    }
+
+    // Generate an access token using JWT
+    var accessToken = _jwtHandler.GenerateAccessToken(
+        tenantId,
+        client_id,
+        authCodeRecord.Username,
+        authCodeRecord.Scopes,
+        expirationSeconds);
+
+    var response = new
+    {
+        access_token = accessToken,
+        token_type = "Bearer",
+        expires_in = expirationSeconds,
+        scope = string.Join(" ", authCodeRecord.Scopes)
+    };
+
+    return Results.Json(response);
+}).DisableAntiforgery();
 
 app.Run("http://localhost:5000");
