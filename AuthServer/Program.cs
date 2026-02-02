@@ -178,11 +178,33 @@ app.MapPost("/{tenantId}/oauth2/v2.0/authorize/login", (
     var user = tenant.UserRegistrations.Get(username);
     if (user?.Password == password)
     {
+        // Validate that the user has been granted the requested scopes
+        var requestedScopes = scope.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+        var userGrants = tenant.UserGrants.Get(username);
+        
+        if (userGrants == null)
+        {
+            return Results.Content("<h1>User has no grants</h1>", "text/html");
+        }
+        
+        // Check if user has all requested scopes for this client
+        var grantedScopes = userGrants.Grants
+            .Where(g => g.ClientId == client_id)
+            .Select(g => g.Scope)
+            .ToList();
+        
+        var hasAllScopes = requestedScopes.All(rs => grantedScopes.Contains(rs));
+        
+        if (!hasAllScopes)
+        {
+            return Results.Content("<h1>User does not have the requested scopes</h1>", "text/html");
+        }
+        
         var authorizationCode = _authorizationCodeHandler.GenerateCode(
             tenantId,
             client_id,
             username,
-            scope.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList(),
+            requestedScopes,
             codeChallenge: code_challenge,
             codeChallengeMethod: code_challenge_method);
         return Results.Redirect($"{redirect_uri}?code={authorizationCode}");
