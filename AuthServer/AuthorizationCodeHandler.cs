@@ -12,7 +12,15 @@ namespace AuthServer
             public List<string> Scopes { get; set; } = new List<string>();
             public string CodeChallenge { get; set; } = string.Empty;
             public string CodeChallengeMethod { get; set; } = string.Empty;
+            public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+            public bool IsRedeemed { get; set; } = false;
         }
+
+        /// <summary>
+        /// Maximum lifetime of an authorization code before it expires.
+        /// RFC 6749 §4.1.2 recommends a maximum lifetime of 10 minutes.
+        /// </summary>
+        private static readonly TimeSpan CodeExpiration = TimeSpan.FromMinutes(10);
 
         private readonly Dictionary<string, AuthorizationCodeRecord> _codes;
 
@@ -93,6 +101,24 @@ namespace AuthServer
                 return null;
             }
 
+            // RFC 6749 §4.1.2: Authorization codes MUST be single-use.
+            // If a code has already been redeemed, reject it to prevent replay attacks.
+            if (record.IsRedeemed)
+            {
+                // If someone tries to reuse a code, it may indicate an attack.
+                // A production system should revoke any tokens issued with this code.
+                _codes.Remove(code);
+                return null;
+            }
+
+            // RFC 6749 §4.1.2: Authorization codes should have a short lifetime.
+            // We enforce a maximum lifetime to limit the window for code interception attacks.
+            if (DateTimeOffset.UtcNow - record.CreatedAt > CodeExpiration)
+            {
+                _codes.Remove(code);
+                return null;
+            }
+
             if (record.CodeChallengeMethod == "S256")
             {
                 // Compute SHA256 hash of the code verifier
@@ -107,6 +133,8 @@ namespace AuthServer
 
                     if (computedChallenge == record.CodeChallenge)
                     {
+                        // Mark the code as redeemed so it cannot be used again
+                        record.IsRedeemed = true;
                         return record;
                     }
                     else

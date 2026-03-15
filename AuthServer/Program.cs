@@ -1,4 +1,5 @@
-﻿using AuthServer;
+﻿using System.Net;
+using AuthServer;
 
 // using to bind form data in POST requests by using [FromForm] attribute
 using Microsoft.AspNetCore.Mvc;
@@ -97,7 +98,8 @@ app.MapGet("/{tenantId}/oauth2/v2.0/authorize", (
     string redirect_uri,
     string scope,
     string code_challenge,
-    string code_challenge_method) =>
+    string code_challenge_method,
+    string? state) =>
 {
     // Confirm tenant exists
     Tenant? tenant;
@@ -149,16 +151,21 @@ app.MapGet("/{tenantId}/oauth2/v2.0/authorize", (
     }
 
     // Serve simple login form
+    // HTML-encode all user-supplied values to prevent XSS attacks.
+    // Without encoding, an attacker could craft a malicious URL with JavaScript
+    // in query parameters (e.g., client_id="><script>alert('xss')</script>)
+    // that would execute in the user's browser.
     var html = $@"
         <html>
         <body>
             <h1>Login</h1>
-            <form method='post' action='/{tenantId}/oauth2/v2.0/authorize/login'>
-                <input type='hidden' name='client_id' value='{client_id}' />
-                <input type='hidden' name='redirect_uri' value='{redirect_uri}' />
-                <input type='hidden' name='scope' value='{scope}' />
-                <input type='hidden' name='code_challenge' value='{code_challenge}' />
-                <input type='hidden' name='code_challenge_method' value='{code_challenge_method}' />
+            <form method='post' action='/{WebUtility.HtmlEncode(tenantId)}/oauth2/v2.0/authorize/login'>
+                <input type='hidden' name='client_id' value='{WebUtility.HtmlEncode(client_id)}' />
+                <input type='hidden' name='redirect_uri' value='{WebUtility.HtmlEncode(redirect_uri)}' />
+                <input type='hidden' name='scope' value='{WebUtility.HtmlEncode(scope)}' />
+                <input type='hidden' name='code_challenge' value='{WebUtility.HtmlEncode(code_challenge)}' />
+                <input type='hidden' name='code_challenge_method' value='{WebUtility.HtmlEncode(code_challenge_method)}' />
+                <input type='hidden' name='state' value='{WebUtility.HtmlEncode(state ?? "")}' />
                 <input type='text' name='username' placeholder='Username' required />
                 <input type='password' name='password' placeholder='Password' required />
                 <button type='submit'>Login</button>
@@ -179,7 +186,8 @@ app.MapPost("/{tenantId}/oauth2/v2.0/authorize/login", (
     [FromForm] string redirect_uri,
     [FromForm] string scope,
     [FromForm] string code_challenge,
-    [FromForm] string code_challenge_method) =>
+    [FromForm] string code_challenge_method,
+    [FromForm] string? state) =>
 {
     var user = tenant.UserRegistrations.Get(username);
     if (user?.Password == password)
@@ -213,7 +221,13 @@ app.MapPost("/{tenantId}/oauth2/v2.0/authorize/login", (
             requestedScopes,
             codeChallenge: code_challenge,
             codeChallengeMethod: code_challenge_method);
-        return Results.Redirect($"{redirect_uri}?code={authorizationCode}");
+        // Return the state parameter unchanged so the client can verify it
+        var redirectUrl = $"{redirect_uri}?code={authorizationCode}";
+        if (!string.IsNullOrEmpty(state))
+        {
+            redirectUrl += $"&state={Uri.EscapeDataString(state)}";
+        }
+        return Results.Redirect(redirectUrl);
     }
     return Results.Content("<h1>Invalid credentials</h1>", "text/html");
 }).DisableAntiforgery(); // Disable antiforgery for simplicity in this example. In production we want to be certain that the login form was served by us and not a phishing site.
