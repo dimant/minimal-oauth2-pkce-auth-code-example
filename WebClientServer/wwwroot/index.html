@@ -237,17 +237,38 @@
             
             const { codeVerifier, codeChallenge } = await generatePKCE();
             
-            // Store verifier for later use in token exchange
+            // Store verifier for later use in token exchange.
+            //
+            // SECURITY NOTE: sessionStorage is used here for simplicity, but it is
+            // accessible to any JavaScript running on this page. If an attacker can
+            // inject script via XSS, they can read both the code verifier and the
+            // access token. In production SPAs, consider:
+            //   - Using a Backend-for-Frontend (BFF) pattern where tokens stay server-side
+            //   - Storing tokens in HTTP-only, Secure, SameSite cookies
+            //   - Implementing a strong Content Security Policy (CSP) to mitigate XSS
             sessionStorage.setItem('codeVerifier', codeVerifier);
             console.log('  [OK] Stored code_verifier in sessionStorage');
-            
+
+            // Generate a random state parameter for CSRF protection.
+            // The state parameter is an opaque value that the client generates and sends
+            // to the authorization server. The server returns it unchanged in the redirect.
+            // The client verifies it matches to ensure the redirect came from the auth
+            // server in response to our request, not from an attacker's crafted URL.
+            const stateArray = new Uint8Array(16);
+            crypto.getRandomValues(stateArray);
+            const state = btoa(String.fromCharCode.apply(null, stateArray))
+                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+            sessionStorage.setItem('oauthState', state);
+            console.log('  [OK] Generated and stored state parameter for CSRF protection');
+
             // Build authorization URL with parameters
             const params = new URLSearchParams({
                 client_id: CLIENT_ID,
                 redirect_uri: REDIRECT_URI,
                 scope: SCOPES,
                 code_challenge: codeChallenge,
-                code_challenge_method: 'S256'
+                code_challenge_method: 'S256',
+                state: state
             });
             
             const authUrl = `${AUTH_SERVER}/${TENANT_ID}/oauth2/v2.0/authorize?${params}`;
@@ -284,9 +305,23 @@
                 displayResult(msg, 'error');
                 return;
             }
-            
+
             console.log('  [OK] Extracted authorization code:', code.substring(0, 20) + '...');
-            
+
+            // Validate the state parameter to protect against CSRF attacks.
+            // If the state doesn't match what we sent, the redirect may be forged.
+            const returnedState = params.get('state');
+            const savedState = sessionStorage.getItem('oauthState');
+            if (!returnedState || returnedState !== savedState) {
+                const msg = 'State parameter mismatch - possible CSRF attack';
+                console.error('[ERROR]', msg);
+                displayResult(msg, 'error');
+                sessionStorage.removeItem('oauthState');
+                return;
+            }
+            sessionStorage.removeItem('oauthState');
+            console.log('  [OK] State parameter validated (CSRF check passed)');
+
             const codeVerifier = sessionStorage.getItem('codeVerifier');
             if (!codeVerifier) {
                 const msg = 'Code verifier not found in session';
