@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Xunit;
 using AuthServer;
 
 namespace AuthServer.Tests;
