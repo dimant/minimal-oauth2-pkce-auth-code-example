@@ -10,6 +10,8 @@ This repository includes:
 
 The goal is clarity and observability, not production hardening. This project is designed to help you step through the full flow in a debugger and understand how the pieces fit together.
 
+> **[Get the lab guide (PDF)](https://identitylab.lemonsqueezy.com/checkout/buy/e1de94d1-3a4b-42cc-b5ea-d7ba8cffb877)** — 27-page walkthrough with threat models, 10 attack scenarios, break/fix exercises, and a production checklist.
+
 ---
 
 ## What This Demonstrates
